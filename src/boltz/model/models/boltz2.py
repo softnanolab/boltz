@@ -35,6 +35,15 @@ from boltz.model.modules.trunkv2 import (
 )
 from boltz.model.optim.ema import EMA
 from boltz.model.optim.scheduler import AlphaFoldLRScheduler
+import time
+
+
+def benchmark(start_time: int) -> dict[str, float]:
+    return {
+        "time": time.time() - start_time,
+        "current memory": torch.cuda.memory_allocated() / 1024**3,
+        "peak memory": torch.cuda.max_memory_allocated() / 1024**3,
+    }
 
 
 class Boltz2(LightningModule):
@@ -411,6 +420,9 @@ class Boltz2(LightningModule):
         with torch.set_grad_enabled(
             self.training and self.structure_prediction_training
         ):
+            # -------- START TIME -------- #
+            start_time = time.time()
+            benchmark_stats = {}
             s_inputs = self.input_embedder(feats)
 
             # Initialize the sequence embeddings
@@ -435,6 +447,10 @@ class Boltz2(LightningModule):
             # Compute pairwise mask
             mask = feats["token_pad_mask"].float()
             pair_mask = mask[:, :, None] * mask[:, None, :]
+
+            # -------------- AFTER PREPROCESSING -------------- #
+            benchmark_stats["after_preprocessing"] = benchmark(start_time)
+
             if self.run_trunk_and_structure:
                 for i in range(recycling_steps + 1):
                     with torch.set_grad_enabled(
@@ -487,6 +503,7 @@ class Boltz2(LightningModule):
                             pair_mask=pair_mask,
                             use_kernels=self.use_kernels,
                         )
+                        benchmark_stats[f"after_pairformer_recycle_{i}"] = benchmark(start_time)
 
             pdistogram = self.distogram_module(z)
             dict_out = {"pdistogram": pdistogram}
@@ -538,6 +555,7 @@ class Boltz2(LightningModule):
                         diffusion_conditioning=diffusion_conditioning,
                     )
                     dict_out.update(struct_out)
+                    benchmark_stats["after_structure_module"] = benchmark(start_time)
 
                 if self.predict_bfactor:
                     pbfactor = self.bfactor_module(s)
@@ -600,6 +618,7 @@ class Boltz2(LightningModule):
                     use_kernels=self.use_kernels,
                 )
             )
+            benchmark_stats["after_confidence_module"] = benchmark(start_time)
 
         if self.affinity_prediction:
             pad_token_mask = feats["token_pad_mask"][0]
@@ -714,7 +733,9 @@ class Boltz2(LightningModule):
                             ),
                         }
                     )
+            benchmark_stats["after_affinity_module"] = benchmark(start_time)
 
+        dict_out["benchmark_stats"] = benchmark_stats
         return dict_out
 
     def get_true_coordinates(
@@ -1112,6 +1133,8 @@ class Boltz2(LightningModule):
                     pred_dict["affinity_probability_binary2"] = out[
                         "affinity_probability_binary2"
                     ]
+
+            pred_dict["benchmark_stats"] = out["benchmark_stats"]
             return pred_dict
 
         except RuntimeError as e:  # catch out of memory exceptions

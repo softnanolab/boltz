@@ -178,6 +178,17 @@ class BoltzWriter(BasePredictionWriter):
                     np.savez_compressed(path, **asdict(new_structure))
                     np.array(atoms["coords"][:, None], dtype=Coords)
 
+                # Save benchmark stats
+                if "benchmark_stats" in prediction:
+                    path = struct_dir / f"benchmark_stats_{record.id}_model_{idx_to_rank[model_idx]}.json"
+                    with path.open("w") as f:
+                        f.write(
+                            json.dumps(
+                                prediction["benchmark_stats"],
+                                indent=4,
+                            )
+                        )
+
                 # Save confidence summary
                 if "plddt" in prediction:
                     path = (
