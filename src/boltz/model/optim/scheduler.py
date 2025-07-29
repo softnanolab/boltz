@@ -72,7 +72,7 @@ class AlphaFoldLRScheduler(torch.optim.lr_scheduler._LRScheduler):
         self.decay_every_n_steps = decay_every_n_steps
         self.decay_factor = decay_factor
 
-        super().__init__(optimizer, last_epoch=last_epoch, verbose=verbose)
+        super().__init__(optimizer, last_epoch=last_epoch)
 
     def state_dict(self) -> dict:
         state_dict = {k: v for k, v in self.__dict__.items() if k not in ["optimizer"]}
