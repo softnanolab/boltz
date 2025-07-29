@@ -42,8 +42,10 @@ test = ["pytest", "requests"]
 src = ["src"]
 extend-exclude = ["conf.py"]
 target-version = "py39"
-lint.select = ["ALL"]
-lint.ignore = [
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
     "COM812",  # Conflicts with the formatter
     "ISC001",  # Conflicts with the formatter
     "ANN101",  # "missing-type-self"
