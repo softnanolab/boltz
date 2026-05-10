@@ -23,6 +23,7 @@ class BoltzWriter(BasePredictionWriter):
         output_dir: str,
         output_format: Literal["pdb", "mmcif"] = "mmcif",
         boltz2: bool = False,
+        dump_distogram: bool = False,
     ) -> None:
         """Initialize the writer.
 
@@ -30,6 +31,11 @@ class BoltzWriter(BasePredictionWriter):
         ----------
         output_dir : str
             The directory to save the predictions.
+        dump_distogram : bool
+            If True, save the trunk pair distogram (softmaxed, float16, padding
+            already trimmed) to ``predictions/<record.id>/distogram_<record.id>.npz``.
+            Requires ``predict_args["keys_dict_out"]`` to include ``"pdistogram"``;
+            ``boltz predict --dump_distogram`` sets that automatically.
 
         """
         super().__init__(write_interval="batch")
@@ -42,6 +48,7 @@ class BoltzWriter(BasePredictionWriter):
         self.output_format = output_format
         self.failed = 0
         self.boltz2 = boltz2
+        self.dump_distogram = dump_distogram
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def write_on_batch_end(
@@ -77,7 +84,9 @@ class BoltzWriter(BasePredictionWriter):
             idx_to_rank = {i: i for i in range(len(records))}
 
         # Iterate over the records
-        for record, coord, pad_mask in zip(records, coords, pad_masks):
+        for batch_record_idx, (record, coord, pad_mask) in enumerate(
+            zip(records, coords, pad_masks)
+        ):
             # Load the structure
             path = self.data_dir / f"{record.id}.npz"
             if self.boltz2:
@@ -254,6 +263,25 @@ class BoltzWriter(BasePredictionWriter):
                         / f"pde_{record.id}_model_{idx_to_rank[model_idx]}.npz"
                     )
                     np.savez_compressed(path, pde=pde.cpu().numpy())
+
+            # Save trunk distogram (once per record; independent of diffusion samples)
+            if self.dump_distogram and "pdistogram" in prediction:
+                disto = prediction["pdistogram"][batch_record_idx].float()
+                # Drop singleton diffusion-sample dim if present: (L, L, 1, B) -> (L, L, B)
+                if disto.dim() == 4:
+                    disto = disto.squeeze(-2)
+                probs = torch.softmax(disto, dim=-1).cpu()
+                if "token_masks" in prediction:
+                    token_mask = prediction["token_masks"][batch_record_idx].cpu().bool()
+                    n = int(token_mask.sum().item())
+                    probs = probs[:n, :n]
+                distogram_dir = self.output_dir / record.id
+                distogram_dir.mkdir(exist_ok=True)
+                np.savez_compressed(
+                    distogram_dir / f"distogram_{record.id}.npz",
+                    probs=probs.numpy().astype(np.float16),
+                    length=np.int32(probs.shape[0]),
+                )
 
     def on_predict_epoch_end(
         self,
