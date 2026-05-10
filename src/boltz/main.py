@@ -1039,6 +1039,15 @@ def cli() -> None:
     is_flag=True,
     help=" to dump the s and z embeddings into a npz file. Default is False.",
 )
+@click.option(
+    "--dump_distogram",
+    is_flag=True,
+    help=(
+        "Dump the trunk pair distogram (softmaxed, float16, padding trimmed) to "
+        "predictions/<id>/distogram_<id>.npz alongside the structure outputs. "
+        "Boltz-2 only. Default False."
+    ),
+)
 def predict(  # noqa: C901, PLR0915, PLR0912
     data: str,
     out_dir: str,
@@ -1077,6 +1086,7 @@ def predict(  # noqa: C901, PLR0915, PLR0912
     num_subsampled_msa: int = 1024,
     no_kernels: bool = False,
     write_embeddings: bool = False,
+    dump_distogram: bool = False,
 ) -> None:
     """Run predictions with Boltz."""
     # If cpu, write a friendly warning
@@ -1250,6 +1260,7 @@ def predict(  # noqa: C901, PLR0915, PLR0912
         output_format=output_format,
         boltz2=model == "boltz2",
         write_embeddings=write_embeddings,
+        dump_distogram=dump_distogram,
     )
 
     # Set up trainer
@@ -1305,6 +1316,11 @@ def predict(  # noqa: C901, PLR0915, PLR0912
             "write_full_pae": write_full_pae,
             "write_full_pde": write_full_pde,
         }
+        if dump_distogram:
+            if model != "boltz2":
+                msg = "--dump_distogram requires --model boltz2"
+                raise click.UsageError(msg)
+            predict_args["keys_dict_out"] = ["pdistogram"]
 
         steering_args = BoltzSteeringParams()
         steering_args.fk_steering = use_potentials
