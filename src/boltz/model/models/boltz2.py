@@ -35,6 +35,7 @@ from boltz.model.modules.trunkv2 import (
 )
 from boltz.model.optim.ema import EMA
 from boltz.model.optim.scheduler import AlphaFoldLRScheduler
+from boltz.model.modules.utils import autocast_device_type
 import time
 
 
@@ -506,7 +507,11 @@ class Boltz2(LightningModule):
                         benchmark_stats[f"after_pairformer_recycle_{i}"] = benchmark(start_time)
 
             pdistogram = self.distogram_module(z)
-            dict_out = {"pdistogram": pdistogram}
+            dict_out = {
+                "pdistogram": pdistogram,
+                "s": s,
+                "z": z,
+            }
 
             if (
                 self.run_trunk_and_structure
@@ -542,7 +547,7 @@ class Boltz2(LightningModule):
                     "token_trans_bias": token_trans_bias,
                 }
 
-                with torch.autocast("cuda", enabled=False):
+                with torch.autocast(autocast_device_type(s.device.type), enabled=False):
                     struct_out = self.structure_module.sample(
                         s_trunk=s.float(),
                         s_inputs=s_inputs.float(),
@@ -582,7 +587,7 @@ class Boltz2(LightningModule):
                 feats["coords"] = atom_coords  # (multiplicity, L, 3)
                 assert len(feats["coords"].shape) == 3
 
-                with torch.autocast("cuda", enabled=False):
+                with torch.autocast(autocast_device_type(s.device.type), enabled=False):
                     struct_out = self.structure_module(
                         s_trunk=s.float(),
                         s_inputs=s_inputs.float(),
@@ -611,7 +616,7 @@ class Boltz2(LightningModule):
                     pred_distogram_logits=(
                         dict_out["pdistogram"][
                             :, :, :, 0
-                        ].detach()  # TODO only implemeted for 1 distogram
+                        ].detach()  # TODO only implemented for 1 distogram
                     ),
                     multiplicity=diffusion_samples,
                     run_sequentially=run_confidence_sequentially,
@@ -640,7 +645,7 @@ class Boltz2(LightningModule):
             ]
             s_inputs = self.input_embedder(feats, affinity=True)
 
-            with torch.autocast("cuda", enabled=False):
+            with torch.autocast(autocast_device_type(s.device.type), enabled=False):
                 if self.affinity_ensemble:
                     dict_out_affinity1 = self.affinity_module1(
                         s_inputs=s_inputs.detach(),
@@ -1088,6 +1093,8 @@ class Boltz2(LightningModule):
 
             pred_dict["masks"] = batch["atom_pad_mask"]
             pred_dict["token_masks"] = batch["token_pad_mask"]
+            pred_dict["s"] = out["s"]
+            pred_dict["z"] = out["z"]
 
             if "keys_dict_out" in self.predict_args:
                 for key in self.predict_args["keys_dict_out"]:
@@ -1144,7 +1151,7 @@ class Boltz2(LightningModule):
                 gc.collect()
                 return {"exception": True}
             else:
-                raise {"exception": True}
+                raise e
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
         """Configure the optimizer."""
