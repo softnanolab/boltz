@@ -2,7 +2,6 @@ import multiprocessing
 import os
 import pickle
 import platform
-import tarfile
 import urllib.request
 import warnings
 from dataclasses import asdict, dataclass
@@ -19,6 +18,7 @@ from pytorch_lightning.utilities import rank_zero_only
 from rdkit import Chem
 from tqdm import tqdm
 
+from boltz._download import download_file, extract_mols
 from boltz.data import const
 from boltz.data.module.inference import BoltzInferenceDataModule
 from boltz.data.module.inferencev2 import Boltz2InferenceDataModule
@@ -213,15 +213,14 @@ def download_boltz2(cache: Path) -> None:
             "This may take a bit of time. You may change the cache directory "
             "with the --cache flag."
         )
-        urllib.request.urlretrieve(MOL_URL, str(tar_mols))  # noqa: S310
+        download_file([MOL_URL], tar_mols)
     if not mols.exists():
         click.echo(
             f"Extracting the CCD data to {mols}. "
             "This may take a bit of time. You may change the cache directory "
             "with the --cache flag."
         )
-        with tarfile.open(str(tar_mols), "r") as tar:
-            tar.extractall(cache)  # noqa: S202
+        extract_mols(tar_mols, cache)
 
     # Download model
     model = cache / "boltz2_conf.ckpt"
@@ -230,15 +229,7 @@ def download_boltz2(cache: Path) -> None:
             f"Downloading the Boltz-2 weights to {model}. You may "
             "change the cache directory with the --cache flag."
         )
-        for i, url in enumerate(BOLTZ2_URL_WITH_FALLBACK):
-            try:
-                urllib.request.urlretrieve(url, str(model))  # noqa: S310
-                break
-            except Exception as e:  # noqa: BLE001
-                if i == len(BOLTZ2_URL_WITH_FALLBACK) - 1:
-                    msg = f"Failed to download model from all URLs. Last error: {e}"
-                    raise RuntimeError(msg) from e
-                continue
+        download_file(BOLTZ2_URL_WITH_FALLBACK, model)
 
     # Download affinity model
     affinity_model = cache / "boltz2_aff.ckpt"
@@ -247,15 +238,7 @@ def download_boltz2(cache: Path) -> None:
             f"Downloading the Boltz-2 affinity weights to {affinity_model}. You may "
             "change the cache directory with the --cache flag."
         )
-        for i, url in enumerate(BOLTZ2_AFFINITY_URL_WITH_FALLBACK):
-            try:
-                urllib.request.urlretrieve(url, str(affinity_model))  # noqa: S310
-                break
-            except Exception as e:  # noqa: BLE001
-                if i == len(BOLTZ2_AFFINITY_URL_WITH_FALLBACK) - 1:
-                    msg = f"Failed to download model from all URLs. Last error: {e}"
-                    raise RuntimeError(msg) from e
-                continue
+        download_file(BOLTZ2_AFFINITY_URL_WITH_FALLBACK, affinity_model)
 
 
 def get_cache_path() -> str:

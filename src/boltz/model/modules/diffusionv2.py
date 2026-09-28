@@ -325,6 +325,8 @@ class AtomDiffusion(Module):
             )
         if max_parallel_samples is None:
             max_parallel_samples = multiplicity
+        if max_parallel_samples < 1:
+            raise ValueError("max_parallel_samples must be positive")
 
         num_sampling_steps = default(num_sampling_steps, self.num_sampling_steps)
         atom_mask = atom_mask.repeat_interleave(multiplicity, 0)
@@ -380,9 +382,7 @@ class AtomDiffusion(Module):
             with torch.no_grad():
                 atom_coords_denoised = torch.zeros_like(atom_coords_noisy)
                 sample_ids = torch.arange(multiplicity, device=atom_coords_noisy.device)
-                sample_ids_chunks = sample_ids.chunk(
-                    multiplicity % max_parallel_samples + 1
-                )
+                sample_ids_chunks = sample_ids.split(max_parallel_samples)
 
                 for sample_ids_chunk in sample_ids_chunks:
                     atom_coords_denoised_chunk = self.preconditioned_network_forward(
